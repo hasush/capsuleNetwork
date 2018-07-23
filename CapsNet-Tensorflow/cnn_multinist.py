@@ -15,7 +15,8 @@ class cnn_multinist(object):
 		with self.graph.as_default():
 			
 			if is_training:
-				self.X, self.Y = get_batch_data_multimnist(cfg.batch_size, cfg.num_threads)
+				self.X, self.labels = get_batch_data_multimnist(cfg.batch_size, cfg.num_threads)
+				self.Y = self.labels
 				# self.X = tf.placeholder(tf.float32, shape=(cfg.batch_size, cfg.image_size, cfg.image_size, 1), name='X')
 				# self.Y = tf.placeholder(tf.float32, shape=(cfg.batch_size, 10), name='Y')
 

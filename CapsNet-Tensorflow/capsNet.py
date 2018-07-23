@@ -8,6 +8,7 @@ import tensorflow as tf
 
 from config import cfg
 from utils import get_batch_data
+from utils import get_batch_data_multimnist
 from utils import softmax
 from utils import reduce_sum
 from capsLayer import CapsLayer
@@ -15,30 +16,29 @@ from capsLayer import CapsLayer
 
 epsilon = 1e-9
 
-
 class CapsNet(object):
     def __init__(self, is_training=True):
         self.graph = tf.Graph()
         with self.graph.as_default():
-            if is_training:
-                print('asdf why here?')
+     
+            if not cfg.use_multimnist:
                 self.X, self.labels = get_batch_data(cfg.dataset, cfg.batch_size, cfg.num_threads)
                 self.Y = tf.one_hot(self.labels, depth=10, axis=1, dtype=tf.float32)
-
-                self.build_arch()
-                self.loss()
-                self._summary()
-
-                # t_vars = tf.trainable_variables()
-                self.global_step = tf.Variable(0, name='global_step', trainable=False)
-                self.optimizer = tf.train.AdamOptimizer()
-                self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)  # var_list=t_vars)
             else:
-                self.X = tf.placeholder(tf.float32, shape=(cfg.batch_size, cfg.image_size, cfg.image_size, 1))
-                print('asdfasdf self.x asdf asdf: ', self.X.shape)
-                self.labels = tf.placeholder(tf.int32, shape=(cfg.batch_size, ))
-                self.Y = tf.reshape(self.labels, shape=(cfg.batch_size, 10, 1))
-                self.build_arch()
+                self.X, self.labels = get_batch_data_multimnist(cfg.batch_size, cfg.num_threads)
+                self.Y = tf.cast(self.labels, dtype=tf.float32)
+
+            self.keep_prob = tf.placeholder_with_default(1.0, shape=(), name='keep_prob')
+
+            self.build_arch()
+            self.loss()
+            self._summary()
+
+            # t_vars = tf.trainable_variables()
+            self.global_step = tf.Variable(0, name='global_step', trainable=False)
+            self.optimizer = tf.train.AdamOptimizer()
+            self.train_op = self.optimizer.minimize(self.total_loss, global_step=self.global_step)  # var_list=t_vars)
+            
 
         tf.logging.info('Seting up the main structure')
 
@@ -56,8 +56,6 @@ class CapsNet(object):
             print('shape asdf asdf: ', conv1.get_shape())
             assert conv1.get_shape() == [cfg.batch_size, 20, 20, 256]
 
-
-
         # Primary Capsules layer, return [batch_size, 1152, 8, 1]
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(num_outputs=32, vec_len=8, with_routing=False, layer_type='CONV')
@@ -69,7 +67,6 @@ class CapsNet(object):
             digitCaps = CapsLayer(num_outputs=10, vec_len=16, with_routing=True, layer_type='FC')
             self.caps2 = digitCaps(caps1)
 
-            #### ASDF ####
             self.v_J = digitCaps.v_J
             self.W = digitCaps.W
             self.b_IJ = digitCaps.b_IJ
@@ -77,7 +74,7 @@ class CapsNet(object):
             self.c_IJ = digitCaps.c_IJ
             self.u_hat = digitCaps.u_hat
             self.biases = digitCaps.biases
-            #### END ASDF ####
+            
 
         # Decoder structure in Fig. 2
         # 1. Do masking, how:
@@ -94,6 +91,21 @@ class CapsNet(object):
             self.argmax_idx = tf.to_int32(tf.argmax(self.softmax_v, axis=1))
             assert self.argmax_idx.get_shape() == [cfg.batch_size, 1, 1]
             self.argmax_idx = tf.reshape(self.argmax_idx, shape=(cfg.batch_size, ))
+
+            # If using multimnist dataset, determine the indices of the vectors which have the
+            # greatest activation.
+            if cfg.use_multimnist:
+                self.softmax_v_flatten = tf.reshape(self.softmax_v, shape=(cfg.batch_size, 10))
+
+                # Obtain the top 2 logit values and their indices for the logits and the labels.
+                self.softmax_v_top_k_values, self.softmax_v_top_k_indices = tf.nn.top_k(self.softmax_v_flatten, k=2, sorted=False)
+                self.Y_top_k_values, self.Y_top_k_indices = tf.nn.top_k(self.Y, k=2, sorted=False)
+
+                # See if one of the indices of the logits matches the labels.
+                self.correct_prediction_1 = tf.equal(self.Y_top_k_indices[:, 0], self.softmax_v_top_k_indices[:, 0])
+                self.correct_prediction_2 = tf.equal(self.Y_top_k_indices[:, 0], self.softmax_v_top_k_indices[:, 1])
+                self.correct_prediction_3 = tf.equal(self.Y_top_k_indices[:, 1], self.softmax_v_top_k_indices[:, 0])
+                self.correct_prediction_4 = tf.equal(self.Y_top_k_indices[:, 1], self.softmax_v_top_k_indices[:, 1])            
 
             # Method 1.
             if not cfg.mask_with_y:
@@ -167,5 +179,15 @@ class CapsNet(object):
         train_summary.append(tf.summary.image('reconstruction_img', recon_img))
         self.train_summary = tf.summary.merge(train_summary)
 
-        correct_prediction = tf.equal(tf.to_int32(self.labels), self.argmax_idx)
-        self.accuracy = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
+        if not cfg.use_multimnist:
+            correct_prediction = tf.equal(tf.to_int32(self.labels), self.argmax_idx)
+            self.accuracy = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
+        else:
+            # Obtain the accuracy by summing the correct matches. Note that this definition gives a maximum
+            # accuracy of 2.0, thus one would need to divide the accuracy by 2 in order to obtain the true accuracy.
+            self.accuracy = (tf.reduce_sum(tf.cast(self.correct_prediction_1, tf.float32))  \
+                            + tf.reduce_sum(tf.cast(self.correct_prediction_2, tf.float32)) \
+                            + tf.reduce_sum(tf.cast(self.correct_prediction_3, tf.float32)) \
+                            + tf.reduce_sum(tf.cast(self.correct_prediction_4, tf.float32)))/2.0
+
+        

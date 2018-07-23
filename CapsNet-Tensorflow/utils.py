@@ -94,11 +94,34 @@ def pad_grayscale_image_with_zero(image):
 
     return image
 
-def create_multimnist(trainX, trainY, is_training):
+def create_multimnist(is_training):
 
-    print("asdf about to create")
+    # Set the random number seed.
+    np.random.seed(0)
+
+    # Base path.
+    path = os.path.join('data', 'mnist')
+
+    # Load the data.
+    if is_training:
+        fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        dataX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32)
+
+        fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        dataY = loaded[8:].reshape((60000)).astype(np.int32)
+    else:
+        fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        dataX = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
+     
+        fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
+        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        dataY = loaded[8:].reshape((10000)).astype(np.int32)
+
     # Obtain the size of the dataset.
-    size_dataset = len(trainX)
+    size_dataset = len(dataX)
 
     # Create label binarizer to one hot encode the digits.
     label_binarizer = sklearn.preprocessing.LabelBinarizer()
@@ -109,23 +132,23 @@ def create_multimnist(trainX, trainY, is_training):
     tmp_arrayY = []
 
     # Define the number of images that we wish to sample.
-    num_sampled_images_needed = 2
+    num_sampled_images_needed = cfg.num_sampled_images_needed_multimnist
 
     # Loop over the images.
-    for index, image in enumerate(trainX):
+    for index, image in enumerate(dataX):
 
         # Obtain the label of the image.
-        image_label = trainY[index]
+        image_label = dataY[index]
 
         # Pad and translate the mnist image to 36x36.
         # Be sure to set in the configuration file to have a size of 36.
         image = pad_grayscale_image_with_zero(image)
 
-        # Translate image by 4 pixels.
-        image = random_translation(image, 5, 5)
+        # Translate image by some pixels.
+        image = random_translation(image, cfg.max_translation_pixel, cfg.max_translation_pixel)
 
         # Binarize the image label.
-        image_one_hot_label = np.squeeze(label_binarizer.transform([trainY[index]]))
+        image_one_hot_label = np.squeeze(label_binarizer.transform([dataY[index]]))
 
         # Instantiate the number of images we have sampled for this base image.
         num_sampled_images = 0
@@ -140,7 +163,7 @@ def create_multimnist(trainX, trainY, is_training):
             sample_index = np.random.randint(size_dataset)
 
             # Obtain its label.
-            sample_label = trainY[sample_index]
+            sample_label = dataY[sample_index]
 
             # If the label of the image is the same as the base image, or if we have
             # already sampled that particular image, then break the loop.
@@ -154,14 +177,14 @@ def create_multimnist(trainX, trainY, is_training):
                 sampled_set.add(sample_index)
 
             # Obtain the sampled image.
-            sampled_image = trainX[sample_index]
+            sampled_image = dataX[sample_index]
 
             # Pad and translate the mnist image to 36x36.
             # Be sure to set in the configuration file to have a size of 36.
             sampled_image = pad_grayscale_image_with_zero(sampled_image)
 
-            # Translate image by 4 pixels.
-            sampled_image = random_translation(sampled_image, 5, 5)
+            # Translate the image by some pixels.
+            sampled_image = random_translation(sampled_image, cfg.max_translation_pixel, cfg.max_translation_pixel)
 
             # Add the two images.
             tmp_arrayX.append(sampled_image + image)
@@ -174,105 +197,26 @@ def create_multimnist(trainX, trainY, is_training):
             tmp_arrayY.append((image_one_hot_label + one_hot_sample_label)/2.0)
 
     # Set the tmp arrays back to the official arrays.
-    trainX = np.array(tmp_arrayX)
-    trainY = np.array(tmp_arrayY)
+    dataX = np.array(tmp_arrayX)
+    dataY = np.array(tmp_arrayY)
+
+    # Normalize.
+    dataX = dataX / 510.
 
     # Save the data.
     if is_training:
-        np.save(cfg.multimnist_path + 'multimnist_trainX_small.npy', trainX)
-        np.save(cfg.multimnist_path + 'multimnist_trainY_small.npy', trainY)
+        np.save(cfg.multimnist_path + 'multimnist_trainX' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy', dataX)
+        np.save(cfg.multimnist_path + 'multimnist_trainY' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy', dataY)
     else:
-        np.save(cfg.multimnist_path + 'multimnist_testX.npy', trainX)
-        np.save(cfg.multimnist_path + 'multimnist_testY.npy', trainY)
-        
-    # Convert to a numpy array, normalize, and return.
-    return trainX / 510., trainY    
-
-# def create_multinist(trainX, trainY, is_training):
-
-#     # Obtain the size of the dataset.
-#     size_dataset = len(trainX)
-
-#     # Create label binarizer to one hot encode the digits.
-#     label_binarizer = sklearn.preprocessing.LabelBinarizer()
-#     label_binarizer.fit(range(10))
-
-#     # Container to hold results.
-#     tmp_arrayX = []
-#     tmp_arrayY = []
-
-#     # Loop over the images.
-#     for index, image in enumerate(trainX):
-
-#         # Pad and translate the mnist image to 36x36.
-#         # Be sure to set in the configuration file to have a size of 36.
-#         image = pad_grayscale_image_with_zero(image)
-
-#         # Translate image by 4 pixels.
-#         image = random_translation(image, 4, 4)
-
-#         # Obtain a list of choices to sample from that does not contain the current image index.
-#         rangeToSample = list(range(0, index)) + list(range(index+1, size_dataset))
-
-#         if index % 100 == 0:
-#             print('Index: ', index)
-        
-#         # Sample 1000 samples from the range without replacement.
-#         random_samples = np.random.choice(rangeToSample, 10, replace=False)
-
-#         # Container to hold the labels of the samples.
-#         sample_labels = []
-
-#         # Binarize the image label.
-#         image_one_hot_label = np.squeeze(label_binarizer.transform([trainY[index]]))
-
-#         # Loop over the other images that we will sample.
-#         for sample in random_samples:
-
-#             # Obtain the sampled image.
-#             tmp_image = trainX[sample]
-
-#             # Pad and translate the mnist image to 36x36.
-#             # Be sure to set in the configuration file to have a size of 36.
-#             tmp_image = pad_grayscale_image_with_zero(tmp_image)
-
-#             # Translate image by 4 pixels.
-#             tmp_image = random_translation(tmp_image, 4, 4)
-
-#             # Add the two images.
-#             tmp_arrayX.append(tmp_image + image)
-
-#             # Add the two labels.
-#             sample_labels.append(trainY[sample])
-
-#             # Binarizer the labels of the sample.
-#             one_hot_sample_label = np.squeeze(label_binarizer.transform([trainY[sample]]))
-
-#             # Concatenate the two labels and append to an array.
-#             # i.e. a "2" and "3" would look like [0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0]
-#             tmp_arrayY.append(np.concatenate((image_one_hot_label, one_hot_sample_label)))
-
-#     # Set the tmp arrays back to the official arrays.
-#     trainX = np.array(tmp_arrayX)
-#     trainY = np.array(tmp_arrayY)
-
-#     # Save the data.
-#     if is_training:
-#         np.save(cfg.multimnist_path + 'multimnist_trainX.npy', trainX)
-#         np.save(cfg.multimnist_path + 'multimnist_trainY.npy', trainY)
-#     else:
-#         np.save(cfg.multimnist_path + 'multimnist_testX.npy', trainX)
-#         np.save(cfg.multimnist_path + 'multimnist_testY.npy', trainY)
-        
-#     # Convert to a numpy array, normalize, and return.
-#     return trainX / 255. / 255., trainY
+        np.save(cfg.multimnist_path + 'multimnist_testX' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy', dataX)
+        np.save(cfg.multimnist_path + 'multimnist_testY' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy', dataY)   
 
 def load_multimnist(is_training):
     if is_training:
 
-        # Load from disc.
-        dataX = np.load(cfg.multimnist_path + 'multimnist_trainX.npy')
-        dataY = np.load(cfg.multimnist_path + 'multimnist_trainY.npy')
+        # Load from disk.
+        dataX = np.load(cfg.multimnist_path + 'multimnist_trainX' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy')
+        dataY = np.load(cfg.multimnist_path + 'multimnist_trainY' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy')
 
         assert len(dataX) == len(dataY)
 
@@ -290,8 +234,10 @@ def load_multimnist(is_training):
         return trX, trY, num_tr_batch, valX, valY, num_val_batch
 
     else:
-        testX = np.load(cfg.multimnist_path + 'multimnist_testX.npy')
-        testY = np.load(cfg.multimnist_path + 'multimnist_testY.npy')
+
+        # Load from disk.
+        testX = np.load(cfg.multimnist_path + 'multimnist_testX' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy')
+        testY = np.load(cfg.multimnist_path + 'multimnist_testY' + '_' + str(cfg.num_sampled_images_needed_multimnist) + '.npy')
 
         assert len(testX) == len(testY)
 
@@ -333,13 +279,9 @@ def load_multimnist_small(is_training):
 
         return testX, testY, num_test_batch
 
-# For multimnist
 def load_mnist(batch_size, is_training=True):
-
-    # Get path to the mnist data folder.
     path = os.path.join('data', 'mnist')
 
-    # If training the classifier.
     if is_training:
         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -348,204 +290,91 @@ def load_mnist(batch_size, is_training=True):
         fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
         trainY = loaded[8:].reshape((60000)).astype(np.int32)
+    
+        # Loop over images for various image manipulation operations.
+        np.random.seed(0)
+        tmp_array = []
+        for image in trainX:
 
-        # # Create the multimnist data set.
-        # np.random.seed(0)
-        # trainX, trainY = create_multimnist(trainX, trainY, is_training=True)
+            # Pad training images with zeros.
+            if cfg.use_image_transformation_train_pad_zero:                
+                image = pad_grayscale_image_with_zero(image)
 
-        # # Load the multimnist data set.
-        # trainX, trainY = load_multimnist(is_training=True)
+            # Apply random rotation.
+            if cfg.use_image_transformation_train_rotation:                
+                image = rotate_grayscale_image(image)
 
-        assert len(trainX) == len(trainY)
-        print(trainY)
+            # Apply random translation.
+            if cfg.use_image_transformation_train_translation:
+                image = random_translation(image)
 
-        print("yes we have reached here boolaateetoo tatatkekeke")
-        print(len(trainX))
-        sys.exit()
+            # Add the image to the temp array.
+            tmp_array.append(image)
 
-        # Seperate into training and validation sets.
-        num_training_samples = int(len(trainX)*55./60.)
-        trX = trainX[:num_training_samples]
-        trY = trainY[:num_training_samples]
-        valX = trainX[num_training_samples:]
-        valY = trainY[num_training_samples:]
+        # Convert to a numpy array.    
+        trainX = np.array(tmp_array)
 
-        trX = trX / np.float(np.max(trX))
-        valX = valX / np.float(np.max(valX))
+        # Normalize and divide into test and validation sets.
+        trX = trainX[:55000] / 255.
+        trY = trainY[:55000]
 
-        # Determine the number of batches given the batch size and the data sizes.
+        valX = trainX[55000:] / 255.
+        valY = trainY[55000:]
+
+        # Reduce the dataset into a 10 image data set.
+        if cfg.use_10_images:
+            unique_images = 5
+
+        # Reduce the training data size.
+        amount_train_use = int(len(trX)*cfg.percent_train_use)
+        trX = trX[:amount_train_use]
+        trY = trY[:amount_train_use]
+        
+        # Compute the number of training and validation batches.
         num_tr_batch = len(trX) // batch_size
         num_val_batch = len(valX) // batch_size
 
         return trX, trY, num_tr_batch, valX, valY, num_val_batch
-
-    # Not training the classifier.
     else:
         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        testX = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
+        teX = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
+        teX = teX / 255.
 
         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
         loaded = np.fromfile(file=fd, dtype=np.uint8)
-        testY = loaded[8:].reshape((10000)).astype(np.int32)
+        teY = loaded[8:].reshape((10000)).astype(np.int32)
 
-        # Create the multimnist dataset.
+        # Loop over images for various image manipulation operations.
         np.random.seed(0)
-        testX, testY = create_multinist(testX, testY, is_training=False)
+        tmp_array = []
+        for image in teX:
 
-        # Load the multimnist data set.
-        testX, testY = load_multimnist(is_training=False)
+            # Pad training images with zeros.
+            if cfg.use_image_transformation_test_pad_zero:
+                image = pad_grayscale_image_with_zero(image)
 
-        assert len(testX) == len(testY)
-        print(testY)
+            # Apply random rotation.
+            if cfg.use_image_transformation_test_rotation:
+                image = rotate_grayscale_image(image)
 
-        # Determine the number of batches given the batch size and testing data size.
-        num_test_batch = len(testX) // batch_size
-        return testX, testY, num_test_batch
-        
+            # Apply random translation.
+            if cfg.use_image_transformation_test_translation:            
+                image = random_translation(image)
 
-        
+            # Add the image to the temp array.
+            tmp_array.append(image)
 
-# def load_mnist(batch_size, is_training=True):
-#     path = os.path.join('data', 'mnist')
-
-#     print(" in loat mnist: is_training? ", is_training)
-#     if is_training:
-#         fd = open(os.path.join(path, 'train-images-idx3-ubyte'))
-#         loaded = np.fromfile(file=fd, dtype=np.uint8)
-#         trainX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float32)
-
-#         fd = open(os.path.join(path, 'train-labels-idx1-ubyte'))
-#         loaded = np.fromfile(file=fd, dtype=np.uint8)
-#         trainY = loaded[8:].reshape((60000)).astype(np.int32)
-
-#         trX = trainX[:55000] / 255.
-#         trY = trainY[:55000]
-
-#         valX = trainX[55000:, ] / 255.
-#         valY = trainY[55000:]
-    
-#         # #### ASDF ####
-#         np.random.seed(0)
-#         trainX, trainY = create_multinist(trainX, trainY)
+        # Convert to a numpy array.    
+        teX = np.array(tmp_array)
 
 
-        
-#         # Loop over images for various image manipulation operations.
-#         tmp_array = []
-#         for image in trainX:
+        # Replace contents of data with affnist set.
+        if cfg.use_affnist_test:
+            teX, teY = load_affnist(cfg.affNistTest)
 
-#             # Pad training images with zeros to make the shape 40x40
-#             image = pad_grayscale_image_with_zero(image)
-
-#             # # Apply random rotation.
-#             # image = rotate_grayscale_image(image)
-
-#             # # Apply random translation.
-#             # image = random_translation(image)
-#             tmp_array.append(image)
-
-#         # Convert to a numpy array.    
-#         trainX = np.array(tmp_array)
-
-#         #### END ASDF ####
-
-#         trX = trainX[:55000] / 255.
-#         trY = trainY[:55000]
-
-#         #### ASDF ####
-
-#         # trX = trX[:41250]
-#         # trY = trY[:41250]
-
-#         # trX = trX[:27500]
-#         # trY = trY[:27500]
-
-#         # trX = trX[:13750]
-#         # trY = trY[:13750]
-
-#         # trX = trX[:5500]
-#         # trY = trY[:5500]
-
-#         # trX = trX[:2750]
-#         # trY = trY[:2750]
-
-#         # trX = trX[:1375]
-#         # trY = trY[:1375]
-
-#         # trX = trX[:550]
-#         # trY = trY[:550]
-
-#         #### END ASDF ####
-
-        
-
-#         num_tr_batch = len(trX) // batch_size
-#         num_val_batch = len(valX) // batch_size
-
-#         return trX, trY, num_tr_batch, valX, valY, num_val_batch
-#     else:
-#         fd = open(os.path.join(path, 't10k-images-idx3-ubyte'))
-#         loaded = np.fromfile(file=fd, dtype=np.uint8)
-#         teX = loaded[16:].reshape((10000, 28, 28, 1)).astype(np.float)
-#         teX = teX / 255.
-
-#         #### ASDF ####
-
-#         # np.random.seed(0)
-#         # # Pad training images with zeros to make the shape 40x40
-#         # tmp_array = []
-#         # for image in teX:
-#         #     image = pad_grayscale_image_with_zero(image)
-#         #     image = rotate_grayscale_image(image)
-#         #     tmp_array.append(image)
-#         # teX = np.array(tmp_array)
-
-#         #### END ASDF ####
-
-
-#         fd = open(os.path.join(path, 't10k-labels-idx1-ubyte'))
-#         loaded = np.fromfile(file=fd, dtype=np.uint8)
-#         teY = loaded[8:].reshape((10000)).astype(np.int32)
-
-       
-
-#         #### ASDF ####
-
-#         #  # print('array ', teX)
-#         # print('before array shape ', teX.shape)
-#         # print('array[0]', type(teX[0]))
-#         # print('before array[0] shape ', teX[0].shape)
-#         # print('asdf type before: ', type(teX[0][0][0][0]))
-#         # plt.figure()
-#         # plt.imshow(np.squeeze(teX[0]))
-#         # for i in teX[0]:
-#         #     print(i)
-
-
-#         teX, teY = load_affnist(cfg.affNistTest)
-
-
-#         # print('asdf type after: ', type(teX[0][0][0][0]))
-#         # for i in teX[0]:
-#         #     print(i)
-#         # plt.figure()
-#         # plt.imshow(np.squeeze(teX[0]))
-#         # plt.show()
-
-#         # # print('array ', teX)
-#         # print('after array shape ', teX.shape)
-#         # print('array[0]', type(teX[0]))
-#         # print('after array[0] shape ', teX[0].shape)
-#         # sys.exit()
-
-#         #### END ASDF ####
-
-        
-
-#         num_te_batch = len(teX) // batch_size
-#         return teX, teY, num_te_batch
-
+        num_te_batch = len(teX) // batch_size
+        return teX, teY, num_te_batch
 
 def load_fashion_mnist(batch_size, is_training=True):
     path = os.path.join('data', 'fashion-mnist')
